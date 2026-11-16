@@ -87,6 +87,7 @@
 
             const data = await res.json();
             if (data.success) {
+                sessionStorage.setItem('auth_state', 'valid');
                 window.location.href = '/test.html';
             } else {
                 showError('验证失败');
@@ -116,4 +117,3 @@
 
 </body>
 </html>
- 

@@ -457,12 +457,11 @@
     }
 
     function systemThink() {
-        const dx = p1.x - p2.x;
-        let dist = Math.abs(dx);
-        let basePower = Math.min(MAX_POWER, Math.max(30, dist * 0.15));
-        let error = (Math.random() - 0.5) * 10;
-        p2.angle = 135 + (Math.random() - 0.5) * 15;
-        fire(p2, basePower + error);
+        let basePower = 30 + Math.random() * 70;
+        let errorAngle = 100 + Math.random() * 70;
+        
+        p2.angle = errorAngle;
+        fire(p2, basePower);
         isFiring = true;
     }
 
@@ -473,7 +472,7 @@
     }
 
     function mainLoop() {
-        if (projectile) {
+        if (projectile && projectile.owner === p1) {
             if (projectile.y < height * 0.5) {
                 targetCameraY = Math.max(0, height * 0.5 - projectile.y);
             } else {

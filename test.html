@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>System Simulation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: none; }
+        canvas { display: block; }
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
+            display: flex; flex-direction: column; justify-content: space-between; padding: 20px;
+        }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; }
+        .hp-bar { width: 40%; height: 20px; background: rgba(0,0,0,0.5); border: 2px solid #fff; border-radius: 10px; overflow: hidden; position: relative; }
+        .hp-fill { height: 100%; width: 100%; transition: width 0.3s; }
+        #p1-hp { background: #00d2ff; }
+        #p2-hp { background: #ff4b2b; float: right; }
+        #turn-indicator { font-size: 24px; font-weight: bold; color: #fff; text-shadow: 2px 2px 4px #000; }
+        .bottom-bar { display: flex; justify-content: space-between; align-items: flex-end; }
+        .stats { background: rgba(0,0,0,0.6); color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 18px; font-weight: bold; border: 1px solid #444; }
+        #end-screen {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85); padding: 40px; border-radius: 20px; text-align: center; pointer-events: auto; display: none; border: 2px solid #fff;
+        }
+        #end-screen h1 { color: #fff; margin-bottom: 20px; font-size: 36px; }
+        #restart-btn { padding: 15px 30px; font-size: 20px; background: #00d2ff; color: #000; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
+        #restart-btn:hover { background: #fff; }
+        .map-text { position: absolute; top: 70px; width: 100%; text-align: center; color: rgba(255,255,255,0.5); font-size: 14px; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<canvas id="mainCanvas"></canvas>
+<div id="ui-layer">
+    <div class="top-bar">
+        <div class="hp-bar"><div id="p1-hp" class="hp-fill"></div></div>
+        <div id="turn-indicator">YOUR TURN</div>
+        <div class="hp-bar"><div id="p2-hp" class="hp-fill"></div></div>
+    </div>
+    <div class="map-text" id="map-display">ENV 1: FLATLANDS</div>
+    <div class="bottom-bar">
+        <div class="stats" id="stats-display">ANGLE: 45°<br>POWER: 50</div>
+    </div>
+</div>
+<div id="end-screen">
+    <h1 id="result-text">COMPLETED</h1>
+    <button id="restart-btn">NEXT ENV</button>
+</div>
+
+<script>
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    const p1HpEl = document.getElementById('p1-hp');
+    const p2HpEl = document.getElementById('p2-hp');
+    const turnEl = document.getElementById('turn-indicator');
+    const statsEl = document.getElementById('stats-display');
+    const endScreenEl = document.getElementById('end-screen');
+    const resultTextEl = document.getElementById('result-text');
+    const restartBtn = document.getElementById('restart-btn');
+    const mapDisplayEl = document.getElementById('map-display');
+
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    const terrainCanvas = document.createElement('canvas');
+    const terrainCtx = terrainCanvas.getContext('2d', { willReadFrequently: true });
+    terrainCanvas.width = width;
+    terrainCanvas.height = height;
+
+    let currentMapIndex = 0;
+    const mapNames = ["ENV 1: FLATLANDS", "ENV 2: MOUNTAIN", "ENV 3: VALLEY"];
+    let isPlayerTurn = true;
+    let isFiring = false;
+    let isFinished = false;
+    let botTimer = 0;
+
+    const GRAVITY = 0.15;
+    let projectile = null;
+    let particles = [];
+    
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let currentAngle = 45;
+    let currentPower = 50;
+    const MAX_POWER = 100;
+    const POWER_MULTIPLIER = 0.25;
+
+    const p1 = { x: 0, y: 0, hp: 100, color: '#00d2ff', angle: 45 };
+    const p2 = { x: 0, y: 0, hp: 100, color: '#ff4b2b', angle: 135 };
+
+    function initApp(mapIndex) {
+        currentMapIndex = mapIndex % 3;
+        mapDisplayEl.innerText = mapNames[currentMapIndex];
+        
+        p1.hp = 100; p2.hp = 100;
+        p1.angle = 45; p2.angle = 135;
+        currentAngle = 45; currentPower = 50;
+        isPlayerTurn = true;
+        isFiring = false;
+        isFinished = false;
+        projectile = null;
+        particles = [];
+        endScreenEl.style.display = 'none';
+        turnEl.innerText = "YOUR TURN";
+        updateUI();
+
+        generateTerrain();
+        spawnUnits();
+    }
+
+    function generateTerrain() {
+        terrainCtx.clearRect(0, 0, width, height);
+        terrainCtx.fillStyle = '#8B4513';
+        terrainCtx.beginPath();
+        terrainCtx.moveTo(0, height);
+
+        for (let x = 0; x <= width; x += 5) {
+            let y = height * 0.7;
+            let t = x / width;
+
+            if (currentMapIndex === 0) {
+                y += Math.sin(t * Math.PI * 4) * 30 + Math.cos(t * Math.PI * 8) * 15;
+            } else if (currentMapIndex === 1) {
+                y -= Math.sin(t * Math.PI) * height * 0.3;
+            } else if (currentMapIndex === 2) {
+                y += Math.sin(t * Math.PI) * height * 0.25;
+            }
+            
+            terrainCtx.lineTo(x, y);
+        }
+        terrainCtx.lineTo(width, height);
+        terrainCtx.closePath();
+        terrainCtx.fill();
+    }
+
+    function getTerrainY(x) {
+        if (x < 0 || x >= width) return height;
+        const data = terrainCtx.getImageData(x, 0, 1, height).data;
+        for (let y = 0; y < height; y++) {
+            if (data[y * 4 + 3] > 0) return y;
+        }
+        return height;
+    }
+
+    function spawnUnits() {
+        p1.x = width * 0.15;
+        p1.y = getTerrainY(p1.x);
+        p2.x = width * 0.85;
+        p2.y = getTerrainY(p2.x);
+    }
+
+    function drawUnit(unit, isPlayer) {
+        ctx.save();
+        ctx.translate(unit.x, unit.y);
+        
+        ctx.fillStyle = unit.color;
+        ctx.beginPath();
+        ctx.roundRect(-20, -15, 40, 15, 5);
+        ctx.fill();
+        
+        let angleRad = -(unit.angle || (isPlayer ? 45 : 135)) * Math.PI / 180;
+        ctx.rotate(angleRad);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(0, -5, 30, 6);
+        ctx.restore();
+
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(unit.x - 25, unit.y - 45, 50, 6);
+        ctx.fillStyle = unit.color;
+        ctx.fillRect(unit.x - 25, unit.y - 45, 50 * (unit.hp / 100), 6);
+    }
+
+    function explode(x, y, radius) {
+        terrainCtx.globalCompositeOperation = 'destination-out';
+        terrainCtx.beginPath();
+        terrainCtx.arc(x, y, radius, 0, Math.PI * 2);
+        terrainCtx.fill();
+        terrainCtx.globalCompositeOperation = 'source-over';
+
+        for (let i = 0; i < 30; i++) {
+            particles.push({
+                x: x, y: y,
+                vx: (Math.random() - 0.5) * 10,
+                vy: (Math.random() - 0.5) * 10,
+                life: 1, color: Math.random() > 0.5 ? '#ff4b2b' : '#ffd700'
+            });
+        }
+
+        checkDamage(p1, x, y, radius);
+        checkDamage(p2, x, y, radius);
+
+        if (p1.hp <= 0 || p2.hp <= 0) {
+            isFinished = true;
+            resultTextEl.innerText = p1.hp <= 0 ? "FAILED" : "COMPLETED";
+            endScreenEl.style.display = 'block';
+        } else {
+            isPlayerTurn = !isPlayerTurn;
+            isFiring = false;
+            if (!isPlayerTurn) {
+                turnEl.innerText = "SYSTEM TURN";
+                botTimer = 60;
+            } else {
+                turnEl.innerText = "YOUR TURN";
+            }
+        }
+    }
+
+    function checkDamage(unit, ex, ey, radius) {
+        const dx = unit.x - ex;
+        const dy = unit.y - 10 - ey;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < radius + 20) {
+            const damage = Math.max(0, Math.floor(50 * (1 - dist / (radius + 20))));
+            unit.hp = Math.max(0, unit.hp - damage);
+            updateUI();
+        }
+    }
+
+    function fire(unit, power) {
+        const rad = -unit.angle * Math.PI / 180;
+        const vx = Math.cos(rad) * power * POWER_MULTIPLIER;
+        const vy = Math.sin(rad) * power * POWER_MULTIPLIER;
+        
+        projectile = {
+            x: unit.x + Math.cos(rad) * 30,
+            y: unit.y - 5 + Math.sin(rad) * 30,
+            vx: vx, vy: vy,
+            owner: unit
+        };
+    }
+
+    function systemThink() {
+        const dx = p1.x - p2.x;
+        let dist = Math.abs(dx);
+        let basePower = Math.min(MAX_POWER, Math.max(30, dist * 0.15));
+        let error = (Math.random() - 0.5) * 10;
+        p2.angle = 135 + (Math.random() - 0.5) * 15;
+        fire(p2, basePower + error);
+        isFiring = true;
+    }
+
+    function updateUI() {
+        p1HpEl.style.width = p1.hp + '%';
+        p2HpEl.style.width = p2.hp + '%';
+        statsEl.innerHTML = `ANGLE: ${Math.round(p1.angle)}°<br>POWER: ${Math.round(currentPower)}`;
+    }
+
+    function mainLoop() {
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#1a1a2e');
+        bgGrad.addColorStop(0.6, '#16213e');
+        bgGrad.addColorStop(1, '#0f3460');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.drawImage(terrainCanvas, 0, 0);
+
+        if (isPlayerTurn && isDragging && !isFiring && !isFinished) {
+            const rad = -currentAngle * Math.PI / 180;
+            let px = p1.x + Math.cos(rad) * 30;
+            let py = p1.y - 5 + Math.sin(rad) * 30;
+            let vx = Math.cos(rad) * currentPower * POWER_MULTIPLIER;
+            let vy = Math.sin(rad) * currentPower * POWER_MULTIPLIER;
+
+            ctx.beginPath();
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            for (let i = 0; i < 40; i++) {
+                px += vx; py += vy; vy += GRAVITY;
+                ctx.lineTo(px, py);
+                if (px < 0 || px > width || py > height) break;
+                const pData = terrainCtx.getImageData(Math.floor(px), Math.floor(py), 1, 1).data;
+                if (pData[3] > 0) break;
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        if (!isFinished || p1.hp > 0) drawUnit(p1, true);
+        if (!isFinished || p2.hp > 0) drawUnit(p2, false);
+
+        if (projectile) {
+            projectile.vy += GRAVITY;
+            projectile.x += projectile.vx;
+            projectile.y += projectile.vy;
+
+            ctx.beginPath();
+            ctx.arc(projectile.x, projectile.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+
+            let hit = false;
+            if (projectile.x < 0 || projectile.x > width || projectile.y > height) hit = true;
+            else {
+                const pData = terrainCtx.getImageData(Math.floor(projectile.x), Math.floor(projectile.y), 1, 1).data;
+                if (pData[3] > 0) hit = true;
+            }
+
+            const hitTank = (t) => Math.abs(projectile.x - t.x) < 25 && Math.abs(projectile.y - t.y) < 20;
+            if (hitTank(p1) || hitTank(p2)) hit = true;
+
+            if (hit) {
+                explode(projectile.x, projectile.y, 40);
+                projectile = null;
+            }
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life -= 0.02;
+            if (p.life <= 0) { particles.splice(i, 1); continue; }
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x, p.y, 4, 4);
+            ctx.globalAlpha = 1.0;
+        }
+
+        if (!isPlayerTurn && !isFiring && !isFinished) {
+            if (botTimer > 0) botTimer--;
+            else systemThink();
+        }
+
+        requestAnimationFrame(mainLoop);
+    }
+
+    function getPointerPos(e) {
+        if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        return { x: e.clientX, y: e.clientY };
+    }
+
+    function onDown(e) {
+        if (!isPlayerTurn || isFiring || isFinished) return;
+        const pos = getPointerPos(e);
+        if (Math.hypot(pos.x - p1.x, pos.y - p1.y) < 100) {
+            isDragging = true;
+            dragStart = { x: p1.x, y: p1.y - 5 };
+        }
+    }
+
+    function onMove(e) {
+        if (!isDragging || !isPlayerTurn || isFiring || isFinished) return;
+        e.preventDefault();
+        const pos = getPointerPos(e);
+        const dx = pos.x - dragStart.x;
+        const dy = pos.y - dragStart.y;
+        
+        currentPower = Math.min(MAX_POWER, Math.hypot(dx, dy) * 0.5);
+        let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+        if (angle < 0) angle = 0;
+        if (angle > 180) angle = 180;
+        
+        if (dx < 0) currentAngle = 180 - angle; 
+        else currentAngle = angle;
+        
+        p1.angle = currentAngle;
+        updateUI();
+    }
+
+    function onUp(e) {
+        if (!isDragging || !isPlayerTurn || isFiring || isFinished) return;
+        isDragging = false;
+        if (currentPower > 5) {
+            fire(p1, currentPower);
+            isFiring = true;
+        }
+    }
+
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    canvas.addEventListener('touchstart', onDown, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+
+    restartBtn.addEventListener('click', () => initApp(currentMapIndex + 1));
+
+    window.addEventListener('resize', () => {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+        terrainCanvas.width = width;
+        terrainCanvas.height = height;
+        initApp(currentMapIndex);
+    });
+
+    initApp(0);
+    mainLoop();
+</script>
+</body>
+</html>

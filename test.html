@@ -40,7 +40,7 @@
         <div id="turn-indicator">YOUR TURN</div>
         <div class="hp-bar"><div id="p2-hp" class="hp-fill"></div></div>
     </div>
-    <div class="map-text" id="map-display">ENV 1: FLATLANDS</div>
+    <div class="map-text" id="map-display">ENV: ALPHA</div>
     <div class="bottom-bar">
         <div class="stats" id="stats-display">ANGLE: 45°<br>POWER: 50</div>
     </div>
@@ -78,8 +78,9 @@
     terrainCanvas.width = width;
     terrainCanvas.height = height;
 
-    let currentMapIndex = 0;
-    const mapNames = ["ENV 1: FLATLANDS", "ENV 2: MOUNTAIN", "ENV 3: VALLEY"];
+    const mapNames = ["ALPHA", "BETA", "GAMMA", "DELTA", "EPSILON", "ZETA"];
+    let currentMapType = 0;
+
     let isPlayerTurn = true;
     let isFiring = false;
     let isFinished = false;
@@ -105,9 +106,9 @@
     const p1 = { x: 0, y: 0, vy: 0, hp: 100, color: '#00d2ff', angle: 45, hurtTimer: 0 };
     const p2 = { x: 0, y: 0, vy: 0, hp: 100, color: '#ff4b2b', angle: 135, hurtTimer: 0 };
 
-    function initApp(mapIndex) {
-        currentMapIndex = mapIndex % 3;
-        mapDisplayEl.innerText = mapNames[currentMapIndex];
+    function initApp() {
+        currentMapType = Math.floor(Math.random() * mapNames.length);
+        mapDisplayEl.innerText = "ENV: " + mapNames[currentMapType];
         
         p1.hp = 100; p2.hp = 100;
         p1.angle = 45; p2.angle = 135;
@@ -194,16 +195,25 @@
         terrainCtx.clearRect(0, 0, width, height);
 
         let points = [];
+        let r1 = Math.random() * 0.2 + 0.1;
+        let r2 = Math.random() * 0.1 - 0.05;
+
         for (let x = 0; x <= width; x += 5) {
             let y = height * 0.7;
             let t = x / width;
 
-            if (currentMapIndex === 0) {
+            if (currentMapType === 0) {
                 y += Math.sin(t * Math.PI * 4) * 30 + Math.cos(t * Math.PI * 8) * 15;
-            } else if (currentMapIndex === 1) {
-                y -= Math.sin(t * Math.PI) * height * 0.3;
-            } else if (currentMapIndex === 2) {
-                y += Math.sin(t * Math.PI) * height * 0.25;
+            } else if (currentMapType === 1) {
+                y -= Math.sin(t * Math.PI) * height * (r1 + 0.15);
+            } else if (currentMapType === 2) {
+                y += Math.sin(t * Math.PI) * height * (r1 + 0.05);
+            } else if (currentMapType === 3) {
+                y += Math.cos(t * Math.PI) * height * 0.2;
+            } else if (currentMapType === 4) {
+                y -= t * height * 0.3;
+            } else if (currentMapType === 5) {
+                y += Math.sin(t * Math.PI * 6 + r2 * 10) * 40;
             }
             points.push({x, y});
         }
@@ -683,7 +693,7 @@
     window.addEventListener('touchmove', onMove, { passive: false });
     window.addEventListener('touchend', onUp);
 
-    restartBtn.addEventListener('click', () => initApp(currentMapIndex + 1));
+    restartBtn.addEventListener('click', () => initApp());
 
     window.addEventListener('resize', () => {
         width = window.innerWidth;
@@ -694,10 +704,10 @@
         bgCanvas.height = height * 2;
         terrainCanvas.width = width;
         terrainCanvas.height = height;
-        initApp(currentMapIndex);
+        initApp();
     });
 
-    initApp(0);
+    initApp();
     mainLoop();
 </script>
 </body>

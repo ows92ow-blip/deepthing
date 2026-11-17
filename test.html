@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <script>
+        if (sessionStorage.getItem('auth_state') !== 'valid') {
+            window.location.href = '/index.html';
+        }
+    </script>
     <title>System Simulation</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
@@ -134,7 +139,6 @@
 
     function generateBackground() {
         bgCtx.clearRect(0, 0, width, height * 2);
-
         let skyGrad = bgCtx.createLinearGradient(0, 0, 0, height * 2);
         skyGrad.addColorStop(0, '#0f172a');
         skyGrad.addColorStop(0.4, '#1e1b4b');
@@ -193,7 +197,6 @@
 
     function generateTerrain() {
         terrainCtx.clearRect(0, 0, width, height);
-
         let points = [];
         let r1 = Math.random() * 0.2 + 0.1;
         let r2 = Math.random() * 0.1 - 0.05;
@@ -201,7 +204,6 @@
         for (let x = 0; x <= width; x += 5) {
             let y = height * 0.7;
             let t = x / width;
-
             if (currentMapType === 0) {
                 y += Math.sin(t * Math.PI * 4) * 30 + Math.cos(t * Math.PI * 8) * 15;
             } else if (currentMapType === 1) {
@@ -303,11 +305,19 @@
     }
 
     function drawUnit(unit, isPlayer) {
-        let leftY = getTerrainY(unit.x - 20);
-        let rightY = getTerrainY(unit.x + 20);
-        let tilt = Math.atan2(rightY - leftY, 40);
-        
-        if (unit.y < leftY - 5 || unit.y < rightY - 5) tilt = 0;
+        let leftY = getTerrainY(unit.x - 15);
+        let rightY = getTerrainY(unit.x + 15);
+        let tilt = 0;
+
+        if (leftY < height && rightY < height) {
+            let angleRad = Math.atan2(rightY - leftY, 30);
+            let maxTilt = Math.PI / 6;
+            tilt = Math.max(-maxTilt, Math.min(maxTilt, angleRad));
+            
+            if (unit.y < leftY - 10 && unit.y < rightY - 10) {
+                tilt = 0;
+            }
+        }
 
         ctx.save();
         ctx.translate(unit.x, unit.y);
